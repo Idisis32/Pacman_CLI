@@ -4,330 +4,61 @@
 #include <windows.h>
 #include <time.h>
 #include <stdbool.h>
+#include <string.h>
 
 #define WIDTH 20
 #define HEIGHT 15
 #define GHOST_COUNT 3
+#define MAX_LEVELS 3
 
+// Структуры
 typedef struct {
     int x, y;
     int dx, dy;
     char symbol;
 } Character;
 
-// Function prototypes
-void drawMenu();
-void drawGame();
-void initGame();
-void movePacman();
-void moveGhosts();
-void drawMap();
-int checkCollision();
-void showGameOver();
-void gotoxy(int x, int y);
-void hideCursor();
-void setColor(int color);
+typedef struct {
+    char layout[HEIGHT][WIDTH + 1];
+    int ghost_start_x;
+    int ghost_start_y;
+    int pacman_start_x;
+    int pacman_start_y;
+    char name[20];
+} Level;
 
-// Global variables
+// Глобальные переменные
 char map[HEIGHT][WIDTH];
 Character pacman;
 Character ghosts[GHOST_COUNT];
 int score = 0;
 int lives = 3;
+int currentLevel = 0;
 bool gameRunning = false;
 bool inMenu = true;
+Level levels[MAX_LEVELS];
 
-int main() {
-    srand(time(NULL));
-    hideCursor();
-    
-    while (1) {
-        if (inMenu) {
-            drawMenu();
-            
-            char input = getch();
-            if (input == '1') {
-                inMenu = false;
-                gameRunning = true;
-                initGame();
-            } else if (input == '2') {
-                system("cls");
-                printf("\n Controls:\n");
-                printf(" W - Move Up\n");
-                printf(" S - Move Down\n");
-                printf(" A - Move Left\n");
-                printf(" D - Move Right\n");
-                printf(" ESC - Exit to Menu\n");
-                printf("\n Press any key to return...");
-                getch();
-            } else if (input == '3' || input == 27) {
-                system("cls");
-                printf("\n Exiting game...\n");
-                return 0;
-            }
-        } else if (gameRunning) {
-            drawGame();
-            
-            if (kbhit()) {
-                char key = getch();
-                if (key == 27) { // ESC
-                    gameRunning = false;
-                    inMenu = true;
-                    continue;
-                }
-                
-                // Pacman controls
-                switch (key) {
-                    case 'w': case 'W':
-                        pacman.dx = 0; pacman.dy = -1;
-                        break;
-                    case 's': case 'S':
-                        pacman.dx = 0; pacman.dy = 1;
-                        break;
-                    case 'a': case 'A':
-                        pacman.dx = -1; pacman.dy = 0;
-                        break;
-                    case 'd': case 'D':
-                        pacman.dx = 1; pacman.dy = 0;
-                        break;
-                }
-            }
-            
-            movePacman();
-            moveGhosts();
-            
-            int collision = checkCollision();
-            if (collision == 1) { // Collision with ghost
-                lives--;
-                if (lives <= 0) {
-                    showGameOver();
-                    gameRunning = false;
-                    inMenu = true;
-                } else {
-                    // Reset positions
-                    pacman.x = 1;
-                    pacman.y = 1;
-                    pacman.dx = pacman.dy = 0;
-                }
-            }
-            
-            Sleep(150); // Delay for game speed
-        }
-    }
-    
-    return 0;
-}
+// Прототипы функций
+void gotoxy(int x, int y);
+void hideCursor();
+void setColor(int color);
+void initLevels();
+void loadLevel(int level);
+void initGame();
+void drawMap();
+void drawGame();
+void movePacman();
+void moveGhosts();
+int checkCollision();
+void updateGame();
+void resetGame();
+void drawMenu();
+void handleMenuInput();
+void handleGameInput();
+void showGameOver();
+void showLevelComplete();
 
-void drawMenu() {
-    system("cls");
-    setColor(14); // Yellow
-    
-    // ASCII art title (PowerShell compatible)
-    printf("\n");
-    printf("  *************************************\n");
-    printf("  *       P A C - M A N   G A M E     *\n");
-    printf("  *************************************\n");
-    
-    setColor(11); // Cyan
-    printf("\n");
-    printf("            +----------------------+\n");
-    printf("            |     MAIN MENU        |\n");
-    printf("            +----------------------+\n");
-    printf("\n");
-    
-    setColor(15); // White
-    printf("                [1] START GAME\n");
-    printf("                [2] CONTROLS\n");
-    printf("                [3] EXIT\n");
-    printf("\n");
-    printf("            SELECT MENU ITEM: ");
-    
-    setColor(10); // Green
-}
-
-void initGame() {
-    score = 0;
-    lives = 3;
-    
-    // Initialize map
-    for (int y = 0; y < HEIGHT; y++) {
-        for (int x = 0; x < WIDTH; x++) {
-            if (x == 0 || x == WIDTH - 1 || y == 0 || y == HEIGHT - 1) {
-                map[y][x] = '#'; // Walls
-            } else if (rand() % 100 < 70 && !(x == 1 && y == 1)) {
-                map[y][x] = '.'; // Food
-            } else {
-                map[y][x] = ' '; // Empty space
-            }
-        }
-    }
-    
-    // Add passages
-    for (int i = 5; i < HEIGHT - 5; i++) {
-        map[i][10] = ' ';
-    }
-    
-    // Initialize pacman
-    pacman.x = 1;
-    pacman.y = 1;
-    pacman.dx = pacman.dy = 0;
-    pacman.symbol = 'C'; // Using 'C' instead of circle for PowerShell compatibility
-    
-    // Initialize ghosts
-    for (int i = 0; i < GHOST_COUNT; i++) {
-        ghosts[i].x = WIDTH - 2;
-        ghosts[i].y = HEIGHT - 2 - i * 2;
-        ghosts[i].dx = -1;
-        ghosts[i].dy = 0;
-        ghosts[i].symbol = 'G'; // Using 'G' instead of '@'
-    }
-}
-
-void drawGame() {
-    gotoxy(0, 0);
-    
-    setColor(15); // White
-    printf("Score: %d", score);
-    printf("     Lives: %d", lives);
-    printf("     Controls: WASD, ESC - menu");
-    
-    // Draw separator line
-    setColor(8); // Gray
-    printf("\n");
-    for (int i = 0; i < 40; i++) {
-        printf("-");
-    }
-    printf("\n");
-    
-    drawMap();
-}
-
-void drawMap() {
-    for (int y = 0; y < HEIGHT; y++) {
-        for (int x = 0; x < WIDTH; x++) {
-            gotoxy(x + 2, y + 3);
-            
-            // Check if pacman is here
-            if (x == pacman.x && y == pacman.y) {
-                setColor(14); // Yellow
-                putchar(pacman.symbol);
-                continue;
-            }
-            
-            // Check if ghost is here
-            bool ghostHere = false;
-            for (int i = 0; i < GHOST_COUNT; i++) {
-                if (x == ghosts[i].x && y == ghosts[i].y) {
-                    setColor(12); // Red
-                    putchar(ghosts[i].symbol);
-                    ghostHere = true;
-                    break;
-                }
-            }
-            
-            if (ghostHere) continue;
-            
-            // Draw map
-            switch (map[y][x]) {
-                case '#':
-                    setColor(9); // Blue
-                    putchar('#');
-                    break;
-                case '.':
-                    setColor(10); // Green
-                    putchar('.');
-                    break;
-                default:
-                    putchar(' ');
-                    break;
-            }
-        }
-        printf("\n");
-    }
-}
-
-void movePacman() {
-    int newX = pacman.x + pacman.dx;
-    int newY = pacman.y + pacman.dy;
-    
-    // Wall collision check
-    if (newX >= 0 && newX < WIDTH && newY >= 0 && newY < HEIGHT) {
-        if (map[newY][newX] != '#') {
-            pacman.x = newX;
-            pacman.y = newY;
-            
-            // Collect food
-            if (map[pacman.y][pacman.x] == '.') {
-                map[pacman.y][pacman.x] = ' ';
-                score += 10;
-            }
-        }
-    }
-}
-
-void moveGhosts() {
-    for (int i = 0; i < GHOST_COUNT; i++) {
-        // Random direction change
-        if (rand() % 100 < 20) {
-            ghosts[i].dx = rand() % 3 - 1;
-            ghosts[i].dy = rand() % 3 - 1;
-            
-            // Ensure ghost doesn't stand still
-            if (ghosts[i].dx == 0 && ghosts[i].dy == 0) {
-                ghosts[i].dx = 1;
-            }
-        }
-        
-        int newX = ghosts[i].x + ghosts[i].dx;
-        int newY = ghosts[i].y + ghosts[i].dy;
-        
-        // Wall and boundary check
-        if (newX >= 0 && newX < WIDTH && newY >= 0 && newY < HEIGHT) {
-            if (map[newY][newX] != '#') {
-                ghosts[i].x = newX;
-                ghosts[i].y = newY;
-            } else {
-                // If hit wall - change direction
-                ghosts[i].dx = -ghosts[i].dx;
-                ghosts[i].dy = -ghosts[i].dy;
-            }
-        } else {
-            // If out of bounds - change direction
-            ghosts[i].dx = -ghosts[i].dx;
-            ghosts[i].dy = -ghosts[i].dy;
-        }
-    }
-}
-
-int checkCollision() {
-    // Check collision with ghosts
-    for (int i = 0; i < GHOST_COUNT; i++) {
-        if (pacman.x == ghosts[i].x && pacman.y == ghosts[i].y) {
-            return 1; // Collision with ghost
-        }
-    }
-    return 0; // No collision
-}
-
-void showGameOver() {
-    system("cls");
-    setColor(12); // Red
-    
-    // ASCII art for GAME OVER
-    printf("\n");
-    printf("   ***********************************\n");
-    printf("   *         G A M E   O V E R      *\n");
-    printf("   ***********************************\n");
-    
-    setColor(15); // White
-    printf("\n                     GAME OVER!\n");
-    printf("                     Your Score: %d\n", score);
-    printf("\n              Press any key to continue...");
-    
-    getch();
-}
-
-// Helper functions
+// ============ УТИЛИТЫ ============
 void gotoxy(int x, int y) {
     COORD coord;
     coord.X = x;
@@ -344,4 +75,542 @@ void hideCursor() {
 
 void setColor(int color) {
     SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), color);
+}
+
+void clearInputBuffer() {
+    while (_kbhit()) {
+        _getch();
+    }
+}
+
+// ============ УРОВНИ ============
+void initLevels() {
+    // Level 1 - Simple maze
+    strcpy(levels[0].name, "EASY MAZE");
+    levels[0].pacman_start_x = 1;
+    levels[0].pacman_start_y = 1;
+    levels[0].ghost_start_x = 18;
+    levels[0].ghost_start_y = 13;
+    
+    const char *level1_layout[HEIGHT] = {
+        "####################",
+        "#..................#",
+        "#.####.###..####.###",
+        "#.#  #.#  ## #  #..#",
+        "#.#  #.#  ## #  #..#",
+        "#.####.###..####.###",
+        "#..................#",
+        "#.###..####.###.####",
+        "#.#  ## #  ## #  #.#",
+        "#.#  ## #  ## #  #.#",
+        "#.###..####.###.####",
+        "#..................#",
+        "#.####.###..####.###",
+        "#..................#",
+        "####################"
+    };
+    
+    for (int y = 0; y < HEIGHT; y++) {
+        strcpy(levels[0].layout[y], level1_layout[y]);
+    }
+    
+    // Level 2 - Medium maze
+    strcpy(levels[1].name, "MEDIUM MAZE");
+    levels[1].pacman_start_x = 2;
+    levels[1].pacman_start_y = 2;
+    levels[1].ghost_start_x = 17;
+    levels[1].ghost_start_y = 12;
+    
+    const char *level2_layout[HEIGHT] = {
+        "####################",
+        "# ##..##..##..##.. #",
+        "# ##..##..##..##.. #",
+        "# ..................",
+        "# ##..##..##..##.. #",
+        "# ##..##..##..##.. #",
+        "#..................#",
+        "# # # # # # # # # # #",
+        "#..................#",
+        "# ##..##..##..##.. #",
+        "# ##..##..##..##.. #",
+        "#..................#",
+        "# ##..##..##..##.. #",
+        "# ##..##..##..##.. #",
+        "####################"
+    };
+    
+    for (int y = 0; y < HEIGHT; y++) {
+        strcpy(levels[1].layout[y], level2_layout[y]);
+    }
+    
+    // Level 3 - Hard maze
+    strcpy(levels[2].name, "HARD MAZE");
+    levels[2].pacman_start_x = 1;
+    levels[2].pacman_start_y = 13;
+    levels[2].ghost_start_x = 18;
+    levels[2].ghost_start_y = 1;
+    
+    const char *level3_layout[HEIGHT] = {
+        "####################",
+        "# # # # # # # # # # #",
+        "# # # # # # # # # # #",
+        "# # # # # # # # # # #",
+        "#..................#",
+        "# # # # # # # # # # #",
+        "# # # # # # # # # # #",
+        "# # # # # # # # # # #",
+        "#..................#",
+        "# # # # # # # # # # #",
+        "# # # # # # # # # # #",
+        "# # # # # # # # # # #",
+        "#..................#",
+        "# # # # # # # # # # #",
+        "####################"
+    };
+    
+    for (int y = 0; y < HEIGHT; y++) {
+        strcpy(levels[2].layout[y], level3_layout[y]);
+    }
+}
+
+void loadLevel(int level) {
+    if (level < 0 || level >= MAX_LEVELS) return;
+    
+    currentLevel = level;
+    
+    for (int y = 0; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            char cell = levels[level].layout[y][x];
+            if (cell == '.' || cell == ' ') {
+                map[y][x] = '.';
+            } else {
+                map[y][x] = cell;
+            }
+        }
+    }
+    
+    pacman.x = levels[level].pacman_start_x;
+    pacman.y = levels[level].pacman_start_y;
+    pacman.dx = pacman.dy = 0;
+    pacman.symbol = 'C';
+    
+    for (int i = 0; i < GHOST_COUNT; i++) {
+        ghosts[i].x = levels[level].ghost_start_x - i * 2;
+        ghosts[i].y = levels[level].ghost_start_y - i;
+        ghosts[i].dx = (i % 2 == 0) ? -1 : 1;
+        ghosts[i].dy = 0;
+        ghosts[i].symbol = 'G';
+    }
+}
+
+void nextLevel() {
+    currentLevel++;
+    if (currentLevel >= MAX_LEVELS) {
+        return;
+    }
+    loadLevel(currentLevel);
+}
+
+// ============ ИГРОВАЯ ЛОГИКА ============
+void initGame() {
+    score = 0;
+    lives = 3;
+    currentLevel = 0;
+    loadLevel(currentLevel);
+}
+
+void resetGame() {
+    score = 0;
+    lives = 3;
+    currentLevel = 0;
+    loadLevel(currentLevel);
+}
+
+void drawMap() {
+    for (int y = 0; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            gotoxy(x * 2 + 2, y + 4);
+            
+            if (x == pacman.x && y == pacman.y) {
+                setColor(14);
+                printf("C ");
+                continue;
+            }
+            
+            bool ghostHere = false;
+            for (int i = 0; i < GHOST_COUNT; i++) {
+                if (x == ghosts[i].x && y == ghosts[i].y) {
+                    setColor(12);
+                    printf("G ");
+                    ghostHere = true;
+                    break;
+                }
+            }
+            
+            if (ghostHere) continue;
+            
+            switch (map[y][x]) {
+                case '#':
+                    setColor(9);
+                    printf("# ");
+                    break;
+                case '.':
+                    setColor(10);
+                    printf(". ");
+                    break;
+                default:
+                    printf("  ");
+                    break;
+            }
+        }
+        printf("\n");
+    }
+}
+
+void drawGame() {
+    gotoxy(0, 0);
+    
+    setColor(15);
+    printf("SCORE: %d", score);
+    printf("    LIVES: %d", lives);
+    printf("    LEVEL: %d - %s", currentLevel + 1, levels[currentLevel].name);
+    
+    setColor(8);
+    printf("\n");
+    for (int i = 0; i < 50; i++) printf("-");
+    printf("\n\n");
+    
+    drawMap();
+    
+    setColor(7);
+    gotoxy(0, HEIGHT + 5);
+    printf("CONTROLS: WASD/ARROWS   ESC-MENU   ENTER-SELECT");
+}
+
+void movePacman() {
+    int newX = pacman.x + pacman.dx;
+    int newY = pacman.y + pacman.dy;
+    
+    if (newX >= 0 && newX < WIDTH && newY >= 0 && newY < HEIGHT) {
+        if (map[newY][newX] != '#') {
+            pacman.x = newX;
+            pacman.y = newY;
+            
+            if (map[pacman.y][pacman.x] == '.') {
+                map[pacman.y][pacman.x] = ' ';
+                score += 10;
+            }
+        }
+    }
+}
+
+void moveGhosts() {
+    for (int i = 0; i < GHOST_COUNT; i++) {
+        if (rand() % 100 < 20) {
+            ghosts[i].dx = rand() % 3 - 1;
+            ghosts[i].dy = rand() % 3 - 1;
+            
+            if (ghosts[i].dx == 0 && ghosts[i].dy == 0) {
+                ghosts[i].dx = (rand() % 2 == 0) ? 1 : -1;
+            }
+        }
+        
+        int newX = ghosts[i].x + ghosts[i].dx;
+        int newY = ghosts[i].y + ghosts[i].dy;
+        
+        if (newX >= 0 && newX < WIDTH && newY >= 0 && newY < HEIGHT) {
+            if (map[newY][newX] != '#') {
+                ghosts[i].x = newX;
+                ghosts[i].y = newY;
+            } else {
+                ghosts[i].dx = -ghosts[i].dx;
+                ghosts[i].dy = -ghosts[i].dy;
+            }
+        } else {
+            ghosts[i].dx = -ghosts[i].dx;
+            ghosts[i].dy = -ghosts[i].dy;
+        }
+    }
+}
+
+int checkCollision() {
+    for (int i = 0; i < GHOST_COUNT; i++) {
+        if (pacman.x == ghosts[i].x && pacman.y == ghosts[i].y) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void updateGame() {
+    movePacman();
+    moveGhosts();
+    
+    if (checkCollision()) {
+        lives--;
+        if (lives <= 0) {
+            gameRunning = false;
+            inMenu = true;
+        } else {
+            pacman.x = levels[currentLevel].pacman_start_x;
+            pacman.y = levels[currentLevel].pacman_start_y;
+            pacman.dx = pacman.dy = 0;
+        }
+    }
+    
+    bool foodLeft = false;
+    for (int y = 0; y < HEIGHT; y++) {
+        for (int x = 0; x < WIDTH; x++) {
+            if (map[y][x] == '.') {
+                foodLeft = true;
+                break;
+            }
+        }
+        if (foodLeft) break;
+    }
+    
+    if (!foodLeft) {
+        if (currentLevel < MAX_LEVELS - 1) {
+            nextLevel();
+        } else {
+            gameRunning = false;
+            inMenu = true;
+        }
+    }
+}
+
+// ============ МЕНЮ ============
+void drawMenu() {
+    system("cls");
+    setColor(14);
+    
+    printf("\n");
+    printf("  *************************************\n");
+    printf("  *       P A C - M A N   G A M E     *\n");
+    printf("  *************************************\n");
+    
+    setColor(11);
+    printf("\n");
+    printf("            +----------------------+\n");
+    printf("            |     MAIN MENU        |\n");
+    printf("            +----------------------+\n");
+    printf("\n");
+    
+    setColor(15);
+    printf("                [1] START GAME\n");
+    printf("                [2] CONTINUE\n");
+    printf("                [3] LEVEL SELECT\n");
+    printf("                [4] CONTROLS\n");
+    printf("                [5] EXIT\n");
+    printf("\n");
+    printf("            SELECT: ");
+    
+    setColor(10);
+}
+
+void drawLevelSelect() {
+    system("cls");
+    setColor(14);
+    
+    printf("\n");
+    printf("  *************************************\n");
+    printf("  *       S E L E C T   L E V E L     *\n");
+    printf("  *************************************\n");
+    
+    setColor(11);
+    printf("\n");
+    printf("            +----------------------+\n");
+    printf("            |     LEVELS           |\n");
+    printf("            +----------------------+\n");
+    printf("\n");
+    
+    setColor(15);
+    for (int i = 0; i < MAX_LEVELS; i++) {
+        printf("                [%d] %s\n", i + 1, levels[i].name);
+    }
+    printf("                [0] BACK\n");
+    printf("\n");
+    printf("            SELECT LEVEL: ");
+    
+    setColor(10);
+}
+
+void drawControls() {
+    system("cls");
+    setColor(11);
+    printf("\n  ================ CONTROLS ================\n\n");
+    setColor(15);
+    printf("  MOVE UP:        W or UP ARROW\n");
+    printf("  MOVE DOWN:      S or DOWN ARROW\n");
+    printf("  MOVE LEFT:      A or LEFT ARROW\n");
+    printf("  MOVE RIGHT:     D or RIGHT ARROW\n");
+    printf("  PAUSE/MENU:     ESC\n");
+    printf("  SELECT:         ENTER\n\n");
+    
+    setColor(14);
+    printf("  ================ GAME RULES ================\n\n");
+    setColor(15);
+    printf("  Collect all green dots (.)\n");
+    printf("  Avoid red ghosts (G)\n");
+    printf("  10 points per dot\n");
+    printf("  3 lives\n");
+    printf("  Complete all %d levels\n\n", MAX_LEVELS);
+    
+    setColor(10);
+    printf("  Press any key to return...");
+    _getch();
+}
+
+void showGameOver() {
+    system("cls");
+    setColor(12);
+    
+    printf("\n");
+    printf("   ***********************************\n");
+    printf("   *         G A M E   O V E R      *\n");
+    printf("   ***********************************\n");
+    
+    setColor(15);
+    printf("\n                     GAME OVER!\n");
+    printf("                     Your Score: %d\n", score);
+    if (currentLevel >= 0 && currentLevel < MAX_LEVELS) {
+        printf("                     Level: %s\n", levels[currentLevel].name);
+    }
+    printf("\n              Press any key to continue...");
+    
+    _getch();
+}
+
+void showLevelComplete() {
+    system("cls");
+    setColor(10);
+    
+    printf("\n");
+    printf("   ***********************************\n");
+    printf("   *    L E V E L   C O M P L E T E  *\n");
+    printf("   ***********************************\n");
+    
+    setColor(15);
+    printf("\n                     Level %d Complete!\n", currentLevel + 1);
+    if (currentLevel >= 0 && currentLevel < MAX_LEVELS) {
+        printf("                     %s\n", levels[currentLevel].name);
+    }
+    printf("                     Score: %d\n", score);
+    printf("                     Lives: %d\n", lives);
+    
+    if (currentLevel < MAX_LEVELS - 1) {
+        printf("\n              Press any key for next level...");
+    } else {
+        printf("\n              CONGRATULATIONS! YOU WIN!\n");
+        printf("                     Final Score: %d\n", score);
+        printf("\n              Press any key to continue...");
+    }
+    
+    _getch();
+}
+
+// ============ ОБРАБОТКА ВВОДА ============
+void handleMenuInput() {
+    char input = _getch();
+    
+    switch (input) {
+        case '1':
+            resetGame();
+            inMenu = false;
+            gameRunning = true;
+            break;
+            
+        case '2':
+            if (score > 0) {
+                inMenu = false;
+                gameRunning = true;
+            }
+            break;
+            
+        case '3':
+            drawLevelSelect();
+            input = _getch();
+            if (input >= '1' && input <= '0' + MAX_LEVELS) {
+                currentLevel = input - '1';
+                resetGame();
+                inMenu = false;
+                gameRunning = true;
+            }
+            break;
+            
+        case '4':
+            drawControls();
+            break;
+            
+        case '5':
+        case 27:
+            system("cls");
+            printf("\n Exiting game...\n");
+            exit(0);
+            break;
+    }
+}
+
+void handleGameInput() {
+    if (!_kbhit()) return;
+    
+    char key = _getch();
+    
+    // Стрелки
+    if (key == 0 || key == 224) {
+        key = _getch();
+        switch (key) {
+            case 72: pacman.dx = 0; pacman.dy = -1; break; // Up
+            case 80: pacman.dx = 0; pacman.dy = 1; break;  // Down
+            case 75: pacman.dx = -1; pacman.dy = 0; break; // Left
+            case 77: pacman.dx = 1; pacman.dy = 0; break;  // Right
+        }
+    } else if (key == 27) { // ESC
+        gameRunning = false;
+        inMenu = true;
+    } else {
+        switch (key) {
+            case 'w': case 'W': pacman.dx = 0; pacman.dy = -1; break;
+            case 's': case 'S': pacman.dx = 0; pacman.dy = 1; break;
+            case 'a': case 'A': pacman.dx = -1; pacman.dy = 0; break;
+            case 'd': case 'D': pacman.dx = 1; pacman.dy = 0; break;
+        }
+    }
+}
+
+// ============ ОСНОВНАЯ ФУНКЦИЯ ============
+int main() {
+    srand(time(NULL));
+    hideCursor();
+    initLevels();
+    
+    while (1) {
+        if (inMenu) {
+            drawMenu();
+            handleMenuInput();
+        } else if (gameRunning) {
+            handleGameInput();
+            
+            if (!gameRunning) {
+                inMenu = true;
+                continue;
+            }
+            
+            updateGame();
+            drawGame();
+            
+            if (!gameRunning) {
+                if (lives <= 0) {
+                    showGameOver();
+                } else {
+                    showLevelComplete();
+                }
+                inMenu = true;
+            }
+            
+            Sleep(150);
+        }
+    }
+    
+    return 0;
 }
