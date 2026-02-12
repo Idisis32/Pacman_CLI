@@ -15,6 +15,7 @@
 typedef struct {
     int x, y;
     int dx, dy;
+    int next_dx, next_dy;  // Добавляем следующее направление
     char symbol;
 } Character;
 
@@ -36,6 +37,7 @@ int lives = 3;
 int currentLevel = 0;
 bool gameRunning = false;
 bool inMenu = true;
+bool gamePaused = false;
 Level levels[MAX_LEVELS];
 
 // Прототипы функций
@@ -57,6 +59,7 @@ void handleMenuInput();
 void handleGameInput();
 void showGameOver();
 void showLevelComplete();
+void clearInputBuffer();
 
 // ============ УТИЛИТЫ ============
 void gotoxy(int x, int y) {
@@ -95,12 +98,12 @@ void initLevels() {
     const char *level1_layout[HEIGHT] = {
         "####################",
         "#..................#",
-        "#.####.###..####.###",
+        "#.    .   ..    .  #",
         "#.#  #.#  ## #  #..#",
         "#.#  #.#  ## #  #..#",
         "#.####.###..####.###",
         "#..................#",
-        "#.###..####.###.####",
+        "#.   ..    .   .    ",
         "#.#  ## #  ## #  #.#",
         "#.#  ## #  ## #  #.#",
         "#.###..####.###.####",
@@ -191,7 +194,10 @@ void loadLevel(int level) {
     
     pacman.x = levels[level].pacman_start_x;
     pacman.y = levels[level].pacman_start_y;
-    pacman.dx = pacman.dy = 0;
+    pacman.dx = 0;
+    pacman.dy = 0;
+    pacman.next_dx = 0;
+    pacman.next_dy = 0;
     pacman.symbol = 'C';
     
     for (int i = 0; i < GHOST_COUNT; i++) {
@@ -277,17 +283,43 @@ void drawGame() {
     
     setColor(8);
     printf("\n");
-    for (int i = 0; i < 50; i++) printf("-");
+    for (int i = 0; i < 55; i++) printf("-");
     printf("\n\n");
     
     drawMap();
     
     setColor(7);
-    gotoxy(0, HEIGHT + 5);
+    gotoxy(0, HEIGHT + 6);
     printf("CONTROLS: WASD/ARROWS   ESC-MENU   ENTER-SELECT");
+    
+    if (gamePaused) {
+        setColor(14);
+        gotoxy(30, 2);
+        printf("PAUSED");
+    }
 }
 
 void movePacman() {
+    // Сохраняем текущее направление
+    int current_dx = pacman.dx;
+    int current_dy = pacman.dy;
+    
+    // Проверяем, можем ли мы изменить направление на следующее
+    if (pacman.next_dx != 0 || pacman.next_dy != 0) {
+        int newX = pacman.x + pacman.next_dx;
+        int newY = pacman.y + pacman.next_dy;
+        
+        if (newX >= 0 && newX < WIDTH && newY >= 0 && newY < HEIGHT) {
+            if (map[newY][newX] != '#') {
+                pacman.dx = pacman.next_dx;
+                pacman.dy = pacman.next_dy;
+                pacman.next_dx = 0;
+                pacman.next_dy = 0;
+            }
+        }
+    }
+    
+    // Двигаем пакмена
     int newX = pacman.x + pacman.dx;
     int newY = pacman.y + pacman.dy;
     
@@ -300,18 +332,41 @@ void movePacman() {
                 map[pacman.y][pacman.x] = ' ';
                 score += 10;
             }
+        } else {
+            // Если уперлись в стену - останавливаемся
+            pacman.dx = 0;
+            pacman.dy = 0;
         }
     }
 }
 
 void moveGhosts() {
     for (int i = 0; i < GHOST_COUNT; i++) {
-        if (rand() % 100 < 20) {
-            ghosts[i].dx = rand() % 3 - 1;
-            ghosts[i].dy = rand() % 3 - 1;
+        // Призраки двигаются случайно, но реже меняют направление
+        if (rand() % 100 < 15) {
+            int attempts = 0;
+            bool valid_move = false;
             
-            if (ghosts[i].dx == 0 && ghosts[i].dy == 0) {
-                ghosts[i].dx = (rand() % 2 == 0) ? 1 : -1;
+            while (!valid_move && attempts < 10) {
+                int new_dx = rand() % 3 - 1;
+                int new_dy = rand() % 3 - 1;
+                
+                if (new_dx == 0 && new_dy == 0) {
+                    attempts++;
+                    continue;
+                }
+                
+                int newX = ghosts[i].x + new_dx;
+                int newY = ghosts[i].y + new_dy;
+                
+                if (newX >= 0 && newX < WIDTH && newY >= 0 && newY < HEIGHT) {
+                    if (map[newY][newX] != '#') {
+                        ghosts[i].dx = new_dx;
+                        ghosts[i].dy = new_dy;
+                        valid_move = true;
+                    }
+                }
+                attempts++;
             }
         }
         
@@ -323,6 +378,7 @@ void moveGhosts() {
                 ghosts[i].x = newX;
                 ghosts[i].y = newY;
             } else {
+                // Если уперлись в стену - разворачиваемся
                 ghosts[i].dx = -ghosts[i].dx;
                 ghosts[i].dy = -ghosts[i].dy;
             }
@@ -343,6 +399,8 @@ int checkCollision() {
 }
 
 void updateGame() {
+    if (gamePaused) return;
+    
     movePacman();
     moveGhosts();
     
@@ -352,12 +410,20 @@ void updateGame() {
             gameRunning = false;
             inMenu = true;
         } else {
+            // Возвращаем пакмена на старт
             pacman.x = levels[currentLevel].pacman_start_x;
             pacman.y = levels[currentLevel].pacman_start_y;
-            pacman.dx = pacman.dy = 0;
+            pacman.dx = 0;
+            pacman.dy = 0;
+            pacman.next_dx = 0;
+            pacman.next_dy = 0;
+            
+            // Небольшая задержка после потери жизни
+            Sleep(500);
         }
     }
     
+    // Проверяем, осталась ли еда
     bool foodLeft = false;
     for (int y = 0; y < HEIGHT; y++) {
         for (int x = 0; x < WIDTH; x++) {
@@ -371,8 +437,10 @@ void updateGame() {
     
     if (!foodLeft) {
         if (currentLevel < MAX_LEVELS - 1) {
+            showLevelComplete();
             nextLevel();
         } else {
+            showLevelComplete();
             gameRunning = false;
             inMenu = true;
         }
@@ -444,7 +512,8 @@ void drawControls() {
     printf("  MOVE DOWN:      S or DOWN ARROW\n");
     printf("  MOVE LEFT:      A or LEFT ARROW\n");
     printf("  MOVE RIGHT:     D or RIGHT ARROW\n");
-    printf("  PAUSE/MENU:     ESC\n");
+    printf("  PAUSE:          P\n");
+    printf("  MENU:           ESC\n");
     printf("  SELECT:         ENTER\n\n");
     
     setColor(14);
@@ -518,12 +587,14 @@ void handleMenuInput() {
             resetGame();
             inMenu = false;
             gameRunning = true;
+            gamePaused = false;
             break;
             
         case '2':
             if (score > 0) {
                 inMenu = false;
                 gameRunning = true;
+                gamePaused = false;
             }
             break;
             
@@ -535,6 +606,7 @@ void handleMenuInput() {
                 resetGame();
                 inMenu = false;
                 gameRunning = true;
+                gamePaused = false;
             }
             break;
             
@@ -556,24 +628,62 @@ void handleGameInput() {
     
     char key = _getch();
     
-    // Стрелки
+    // Обработка ESC
+    if (key == 27) {
+        gameRunning = false;
+        inMenu = true;
+        return;
+    }
+    
+    // Обработка PAUSE
+    if (key == 'p' || key == 'P') {
+        gamePaused = !gamePaused;
+        return;
+    }
+    
+    // Не обрабатываем движение, если игра на паузе
+    if (gamePaused) return;
+    
+    // Обработка стрелок
     if (key == 0 || key == 224) {
         key = _getch();
         switch (key) {
-            case 72: pacman.dx = 0; pacman.dy = -1; break; // Up
-            case 80: pacman.dx = 0; pacman.dy = 1; break;  // Down
-            case 75: pacman.dx = -1; pacman.dy = 0; break; // Left
-            case 77: pacman.dx = 1; pacman.dy = 0; break;  // Right
+            case 72: // Up arrow
+                pacman.next_dx = 0;
+                pacman.next_dy = -1;
+                break;
+            case 80: // Down arrow
+                pacman.next_dx = 0;
+                pacman.next_dy = 1;
+                break;
+            case 75: // Left arrow
+                pacman.next_dx = -1;
+                pacman.next_dy = 0;
+                break;
+            case 77: // Right arrow
+                pacman.next_dx = 1;
+                pacman.next_dy = 0;
+                break;
         }
-    } else if (key == 27) { // ESC
-        gameRunning = false;
-        inMenu = true;
     } else {
+        // Обработка WASD
         switch (key) {
-            case 'w': case 'W': pacman.dx = 0; pacman.dy = -1; break;
-            case 's': case 'S': pacman.dx = 0; pacman.dy = 1; break;
-            case 'a': case 'A': pacman.dx = -1; pacman.dy = 0; break;
-            case 'd': case 'D': pacman.dx = 1; pacman.dy = 0; break;
+            case 'w': case 'W':
+                pacman.next_dx = 0;
+                pacman.next_dy = -1;
+                break;
+            case 's': case 'S':
+                pacman.next_dx = 0;
+                pacman.next_dy = 1;
+                break;
+            case 'a': case 'A':
+                pacman.next_dx = -1;
+                pacman.next_dy = 0;
+                break;
+            case 'd': case 'D':
+                pacman.next_dx = 1;
+                pacman.next_dy = 0;
+                break;
         }
     }
 }
@@ -588,27 +698,18 @@ int main() {
         if (inMenu) {
             drawMenu();
             handleMenuInput();
+            clearInputBuffer();
         } else if (gameRunning) {
+            // Обрабатываем ввод
             handleGameInput();
             
-            if (!gameRunning) {
-                inMenu = true;
-                continue;
-            }
-            
+            // Обновляем игру
             updateGame();
+            
+            // Отрисовываем
             drawGame();
             
-            if (!gameRunning) {
-                if (lives <= 0) {
-                    showGameOver();
-                } else {
-                    showLevelComplete();
-                }
-                inMenu = true;
-            }
-            
-            Sleep(150);
+            Sleep(150); // Скорость игры
         }
     }
     
